@@ -1,0 +1,18 @@
+# Security rules
+
+Aplicar estas reglas al SQL normalizado sin confundir palabras clave dentro de comentarios o literales. Todas las reglas siguientes son parte del comportamiento normativo.
+
+| ID | Descripción | Condición | Severidad | Justificación y recomendación | Excepciones o límites |
+|---|---|---|---|---|---|
+| SEC-001 | `DELETE` sin `WHERE` | `DELETE` objetivo sin cláusula `WHERE` efectiva | CRITICAL | Puede eliminar todas las filas. No ejecutar; agregar un predicado verificado y usar transacción/respaldo según el entorno. | Un borrado total intencional sigue siendo destructivo; la intención explícita puede explicar, no eliminar, el riesgo. |
+| SEC-002 | `UPDATE` sin `WHERE` | `UPDATE` sin `WHERE` efectiva | CRITICAL | Puede modificar todas las filas. No ejecutar hasta restringir y verificar. | Una actualización total intencional conserva el riesgo operativo. |
+| SEC-003 | Predicado universal | `DELETE`/`UPDATE` con `WHERE 1=1`, `TRUE`, `id=id` u otra tautología demostrable; considerar `OR` que haga universal el conjunto | CRITICAL | Equivale a no restringir la modificación. No ejecutar. | No disparar solo por `1=1 AND id=:id`; el segundo término sí restringe. Considerar semántica de `NULL` antes de afirmar tautologías complejas. |
+| SEC-004 | Predicado evidentemente demasiado amplio | Modificación con único filtro como `LIKE '%'` o `LIKE '%%'` que coincide con todo valor no nulo | CRITICAL | La operación afecta evidentemente todas las filas no nulas y puede ser masiva. Reemplazar por condición selectiva verificada. | Si otros predicados conjuntivos restringen, reevaluar; con impacto no demostrable usar HIGH. |
+| SEC-005 | Concatenación susceptible a inyección | Construcción visible de SQL concatenando/interpolando entrada externa no validada | HIGH | Permite alterar la estructura SQL. Usar parámetros/prepared statements y listas permitidas para identificadores. | No llamar CRITICAL sin demostrar explotación e impacto grave; SQL ya renderizado puede no revelar su origen. |
+| SEC-006 | `DROP TABLE`/`DROP DATABASE` | Aparición estructural de `DROP TABLE` o `DROP DATABASE` | HIGH | Operación destructiva con posible pérdida irreversible. Confirmar intención, objetivo, respaldo y entorno. | No es automáticamente incorrecta en migraciones controladas; elevar solo con evidencia adicional. |
+| SEC-007 | `TRUNCATE` | `TRUNCATE TABLE` | HIGH | Elimina masivamente datos y puede tener semántica transaccional específica. Confirmar intención, respaldo y dialecto. | La intención conocida no elimina el impacto. |
+| SEC-008 | `ALTER` destructivo | `ALTER ... DROP COLUMN`, reducción de tipo/tamaño u operación que pueda perder datos | HIGH | Puede perder datos o invalidar dependencias. Revisar migración, dependencias y respaldo. | Cambios aditivos no activan esta regla; compatibilidad depende del motor. |
+| SEC-009 | Operación masiva probable | DML restrictivo pero posiblemente amplio según rango/fecha | INFO | El impacto no se confirma sin cardinalidad. Obtener estimación de filas, objetivo y plan; ejecutar primero una selección equivalente. | No duplicar SEC-001 a SEC-004. |
+| SEC-010 | Secreto literal en SQL *(regla adicional del equipo)* | Credencial, token o clave evidentemente incrustada en un literal o comentario | HIGH | Puede filtrarse en repositorios, historiales o logs. Retirar, rotar si fue real y usar gestión de secretos. | No etiquetar cualquier cadena como secreto; exigir nombre/contexto convincente. |
+
+`DELETE FROM sessions WHERE expires_at < CURRENT_TIMESTAMP` no activa SEC-001/003/004: contiene un filtro real. Puede activar SEC-009 como `INFO` si falta cardinalidad, sin declararlo inseguro automáticamente.
